@@ -70,3 +70,6 @@ channels:
 
   - name: "Josh Johnson"
     channel: "@JoshJohnsonComedy"
+
+  - name: "Channel 5"
+    channel: "@Channel5YouTube"
