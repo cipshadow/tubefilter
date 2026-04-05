@@ -27,8 +27,10 @@ if _env_file.exists():
             os.environ.setdefault(key.strip(), value.strip())
 
 CHANNELS_FILE = Path(__file__).parent / "channels.yml"
-STATE_DIR = Path.home() / ".tubefilter"
-STATE_FILE = STATE_DIR / "sent.json"
+# Use .state/ in repo dir (for GitHub Actions persistence), fallback to ~/.tubefilter/
+_REPO_STATE = Path(__file__).parent / ".state" / "sent.json"
+_HOME_STATE = Path.home() / ".tubefilter" / "sent.json"
+STATE_FILE = _REPO_STATE if os.environ.get("GITHUB_ACTIONS") else _HOME_STATE
 RECIPIENT = os.environ.get("TUBEFILTER_RECIPIENT", "")
 
 
@@ -115,37 +117,49 @@ def _resolve_handle(handle: str) -> str | None:
 # --- Feed Fetching ---
 
 def _check_shorts_batch(video_ids: list[str]) -> set[str]:
-    """Check which video IDs are Shorts. Returns set of Short video IDs."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    """Check which video IDs are Shorts via YouTube Data API. Returns set of Short IDs."""
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        print("  [warn] YOUTUBE_API_KEY not set, skipping shorts filter", file=sys.stderr)
+        return set()
 
-    cookies = {
-        "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNDAxLjA1X3AxGgJlbiACGgYIgJCYuwY",
-        "CONSENT": "YES+cb.20210328-17-p0.en+FX+999",
-    }
-    headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
     shorts = set()
-
-    def check_one(vid):
+    # API supports up to 50 IDs per request
+    for i in range(0, len(video_ids), 50):
+        batch = video_ids[i : i + 50]
         try:
-            r = requests.head(
-                f"https://www.youtube.com/shorts/{vid}",
-                allow_redirects=True, timeout=10,
-                headers=headers, cookies=cookies,
+            resp = requests.get(
+                "https://www.googleapis.com/youtube/v3/videos",
+                params={
+                    "part": "contentDetails",
+                    "id": ",".join(batch),
+                    "key": api_key,
+                },
+                timeout=15,
             )
-            if "/shorts/" in r.url:
-                return vid
-        except requests.RequestException:
-            pass
-        return None
-
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = {pool.submit(check_one, vid): vid for vid in video_ids}
-        for f in as_completed(futures):
-            result = f.result()
-            if result:
-                shorts.add(result)
+            resp.raise_for_status()
+            for item in resp.json().get("items", []):
+                # Parse ISO 8601 duration (PT#M#S). Shorts are <= 60s.
+                duration = item.get("contentDetails", {}).get("duration", "")
+                if _is_short_duration(duration):
+                    shorts.add(item["id"])
+        except requests.RequestException as e:
+            print(f"  [warn] YouTube API error: {e}", file=sys.stderr)
 
     return shorts
+
+
+def _is_short_duration(duration: str) -> bool:
+    """Check if an ISO 8601 duration is <= 60 seconds (i.e., a Short)."""
+    # Format: PT1H2M3S, PT5M, PT30S, etc.
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
+    if not match:
+        return False
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    total = hours * 3600 + minutes * 60 + seconds
+    return total <= 60
 
 
 def fetch_feed(channel_id: str, exclude_shorts: bool = True) -> list[dict]:
@@ -215,7 +229,7 @@ def load_state() -> dict:
 
 def save_state(state: dict):
     """Save the state file."""
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     state["last_run"] = datetime.now(timezone.utc).isoformat()
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)

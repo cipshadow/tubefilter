@@ -1,0 +1,34 @@
+name: Weekly YouTube Digest
+
+on:
+  schedule:
+    # Friday 3pm UTC = 4pm BST (London summer time)
+    - cron: "0 15 * * 5"
+  workflow_dispatch: # manual trigger from GitHub UI
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send digest
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TUBEFILTER_RECIPIENT: ${{ secrets.TUBEFILTER_RECIPIENT }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python tubefilter.py
+
+      - name: Persist state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .state/sent.json
+          git diff --cached --quiet || git commit -m "chore: update sent state [skip ci]" && git push
