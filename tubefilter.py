@@ -117,7 +117,7 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
                 resp = requests.get(
                     "https://www.googleapis.com/youtube/v3/videos",
                     params={
-                        "part": "contentDetails,statistics",
+                        "part": "contentDetails,statistics,snippet",
                         "id": ",".join(batch),
                         "key": api_key,
                     },
@@ -131,13 +131,25 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
                     likes = int(stats.get("likeCount", 0))
                     comments = int(stats.get("commentCount", 0))
                     like_rate = (likes / views * 100) if views > 0 else 0
+                    # Parse publish date for velocity calc
+                    snippet = item.get("snippet", {})
+                    pub_str = snippet.get("publishedAt", "")
+                    days_up = 1
+                    if pub_str:
+                        try:
+                            pub_dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
+                            days_up = max(1, (datetime.now(timezone.utc) - pub_dt).days)
+                        except (ValueError, TypeError):
+                            pass
+                    views_per_day = views / days_up
+
                     api_data[item["id"]] = {
                         "duration": _format_duration(raw_dur),
                         "views": views,
                         "views_fmt": _format_count(views),
-                        "likes_fmt": _format_count(likes),
+                        "views_per_day": views_per_day,
+                        "views_per_day_fmt": _format_count(int(views_per_day)),
                         "like_rate": like_rate,
-                        "comments_fmt": _format_count(comments),
                     }
             except requests.RequestException as e:
                 print(f"  [warn] YouTube API error: {e}", file=sys.stderr)
@@ -173,6 +185,8 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
             "duration": data.get("duration", ""),
             "views": data.get("views", 0),
             "views_fmt": data.get("views_fmt", ""),
+            "views_per_day": data.get("views_per_day", 0),
+            "views_per_day_fmt": data.get("views_per_day_fmt", ""),
             "like_rate": data.get("like_rate", 0),
             "is_short": vid in short_ids,
         }
@@ -258,6 +272,8 @@ def fetch_feed(channel_id: str, exclude_shorts: bool = True) -> list[dict]:
             v["duration"] = info.get("duration", "")
             v["views"] = info.get("views", 0)
             v["views_fmt"] = _format_count(info.get("views", 0))
+            v["views_per_day"] = info.get("views_per_day", 0)
+            v["views_per_day_fmt"] = info.get("views_per_day_fmt", "")
             v["like_rate"] = info.get("like_rate", 0)
         if exclude_shorts:
             videos = [v for v in videos if not details.get(v["id"], {}).get("is_short", False)]
@@ -295,9 +311,9 @@ def render_email(channels_with_videos: list[dict]) -> str:
     for ch in channels_with_videos:
         video_links = ""
         for v in ch["videos"]:
-            vc = v.get("views_color", "#999")
+            vc = v.get("velocity_color", "#999")
             lc = v.get("likes_color", "#999")
-            views_fmt = v.get("views_fmt", "")
+            vpd = v.get("views_per_day_fmt", "")
             like_rate = v.get("like_rate", 0)
             video_links += f"""
               <li style="margin: 0 0 8px 0;">
@@ -306,7 +322,7 @@ def render_email(channels_with_videos: list[dict]) -> str:
                 </a>
                 <br>
                 <span style="color: #999; font-size: 12px;">{escape(v.get('duration', ''))}</span>
-                <span style="font-size: 12px;"> &middot; <span style="color: {vc};">&#9679;</span> {views_fmt} views</span>
+                <span style="font-size: 12px;"> &middot; <span style="color: {vc};">&#9679;</span> {vpd}/day</span>
                 <span style="font-size: 12px;"> &middot; <span style="color: {lc};">&#9679;</span> {like_rate:.1f}% likes</span>
               </li>"""
 
@@ -478,9 +494,9 @@ def main():
     total = sum(len(ch["videos"]) for ch in channels_with_videos)
     print(f"  Found {total} new videos across {len(channels_with_videos)} channels.")
 
-    # Compute quartiles for views and like_rate across all videos
+    # Compute quartiles for velocity and like_rate across all videos
     all_videos = [v for ch in channels_with_videos for v in ch["videos"]]
-    all_views = sorted(v.get("views", 0) for v in all_videos)
+    all_velocity = sorted(v.get("views_per_day", 0) for v in all_videos)
     all_likes = sorted(v.get("like_rate", 0) for v in all_videos)
 
     def quartile_bounds(values):
@@ -489,7 +505,7 @@ def main():
             return values[0] if values else 0, values[-1] if values else 0
         return values[n // 4], values[3 * n // 4]
 
-    views_q1, views_q3 = quartile_bounds(all_views)
+    vel_q1, vel_q3 = quartile_bounds(all_velocity)
     likes_q1, likes_q3 = quartile_bounds(all_likes)
 
     def signal_color(value, q1, q3):
@@ -501,7 +517,7 @@ def main():
 
     for ch in channels_with_videos:
         for v in ch["videos"]:
-            v["views_color"] = signal_color(v.get("views", 0), views_q1, views_q3)
+            v["velocity_color"] = signal_color(v.get("views_per_day", 0), vel_q1, vel_q3)
             v["likes_color"] = signal_color(v.get("like_rate", 0), likes_q1, likes_q3)
 
     # Render and send
