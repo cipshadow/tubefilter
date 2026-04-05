@@ -1,0 +1,72 @@
+# TubeFilter — YouTube channels to follow
+# Each entry needs a name (display label) and channel (URL, @handle, or channel ID)
+
+channels:
+  - name: "Wizards with Guns"
+    channel: "@Wizards_with_Guns"
+
+  - name: "Kurzgesagt"
+    channel: "@kurzgesagt"
+
+  - name: "KRAZAM"
+    channel: "@KRAZAM"
+
+  - name: "Kurzgesagt Night Shift"
+    channel: "@nightshift_kurzgesagt"
+
+  - name: "Coffeezilla"
+    channel: "@Coffeezilla"
+
+  - name: "Wendover Productions"
+    channel: "@Wendoverproductions"
+
+  - name: "Bro Science Life"
+    channel: "@BroScienceLife"
+
+  - name: "Caspian Report"
+    channel: "@CaspianReport"
+
+  - name: "Computerphile"
+    channel: "@Computerphile"
+
+  - name: "Luis Luis"
+    channel: "@LuisLuis"
+
+  - name: "Lil Dicky"
+    channel: "@LilDickyRap"
+
+  - name: "Dragos Comedy"
+    channel: "@DragosComedy"
+
+  - name: "Nerdwriter1"
+    channel: "@Nerdwriter1"
+
+  - name: "Recorder Romania"
+    channel: "@RecorderRomania"
+
+  - name: "3Blue1Brown"
+    channel: "@3blue1brown"
+
+  - name: "Nathan Fielder"
+    channel: "@nathanfielder"
+
+  - name: "Adam Ilea"
+    channel: "@adamilea7250"
+
+  - name: "Primitive Technology"
+    channel: "@primitivetechnology9550"
+
+  - name: "Exurb2a"
+    channel: "@exurb2a114"
+
+  - name: "Exurb1a"
+    channel: "@Exurb1a"
+
+  - name: "Historia Civilis"
+    channel: "@HistoriaCivilis"
+
+  - name: "The School of Life"
+    channel: "@theschooloflifetv"
+
+  - name: "Josh Johnson"
+    channel: "@JoshJohnsonComedy"
