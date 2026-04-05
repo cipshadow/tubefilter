@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2,
+  "name": "TubeFilter Gate",
+  "version": "1.0",
+  "description": "Blocks YouTube homepage and feed. Search and direct video links still work.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tubefilter-gate@cipshadow",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/*", "*://youtube.com/*", "*://m.youtube.com/*"],
+      "js": ["gate.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
