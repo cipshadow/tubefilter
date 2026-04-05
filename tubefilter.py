@@ -158,7 +158,7 @@ def _is_short_duration(duration: str) -> bool:
     minutes = int(match.group(2) or 0)
     seconds = int(match.group(3) or 0)
     total = hours * 3600 + minutes * 60 + seconds
-    return total <= 60
+    return total <= 180  # Shorts can be up to 3 minutes
 
 
 def fetch_feed(channel_id: str, exclude_shorts: bool = True) -> list[dict]:
