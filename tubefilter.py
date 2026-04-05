@@ -363,9 +363,21 @@ def main():
         videos = fetch_feed(channel_id)
         new_videos = [v for v in videos if v["id"] and v["id"] not in sent_ids]
 
-        # Filter by publish date if --days is set
+        # Filter by publish date: use --days if set, otherwise since last run
+        cutoff = None
         if args.days > 0:
             cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
+        elif state.get("last_run"):
+            try:
+                cutoff = datetime.fromisoformat(state["last_run"])
+            except (ValueError, TypeError):
+                pass
+
+        # Default to 7 days on first ever run
+        if cutoff is None:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+
+        if cutoff:
             filtered = []
             for v in new_videos:
                 try:
@@ -373,7 +385,7 @@ def main():
                     if pub >= cutoff:
                         filtered.append(v)
                 except (ValueError, AttributeError):
-                    filtered.append(v)  # include if we can't parse the date
+                    filtered.append(v)
             new_videos = filtered
 
         # Deduplicate within this batch
