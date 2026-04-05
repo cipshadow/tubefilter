@@ -75,42 +75,28 @@ def resolve_channel_id(channel_str: str) -> str | None:
 
 
 def _resolve_handle(handle: str) -> str | None:
-    """Fetch a YouTube handle page and extract the channel ID."""
-    url = f"https://www.youtube.com/{handle}"
-    # Cookies to bypass EU consent redirect
-    cookies = {
-        "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjUwNDAxLjA1X3AxGgJlbiACGgYIgJCYuwY",
-        "CONSENT": "YES+cb.20210328-17-p0.en+FX+999",
-    }
-    try:
-        resp = requests.get(
-            url, timeout=15,
-            headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"},
-            cookies=cookies,
-        )
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        print(f"  [warn] Failed to fetch {url}: {e}", file=sys.stderr)
+    """Resolve a YouTube handle to a channel ID via the YouTube Data API."""
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        print(f"  [warn] YOUTUBE_API_KEY not set, cannot resolve {handle}", file=sys.stderr)
         return None
 
-    # Look for channel ID in meta tags or page data
-    # Pattern 1: <meta property="og:url" content="https://www.youtube.com/channel/UCXXX">
-    match = re.search(r'"channelId"\s*:\s*"(UC[\w-]{22})"', resp.text)
-    if match:
-        return match.group(1)
+    # Strip leading @ if present
+    clean_handle = handle.lstrip("@")
+    try:
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/channels",
+            params={"part": "id", "forHandle": clean_handle, "key": api_key},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+        if items:
+            return items[0]["id"]
+    except requests.RequestException as e:
+        print(f"  [warn] YouTube API error resolving {handle}: {e}", file=sys.stderr)
 
-    match = re.search(
-        r'<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[\w-]{22})"',
-        resp.text,
-    )
-    if match:
-        return match.group(1)
-
-    match = re.search(r'"externalId"\s*:\s*"(UC[\w-]{22})"', resp.text)
-    if match:
-        return match.group(1)
-
-    print(f"  [warn] Could not find channel ID for {handle}", file=sys.stderr)
+    print(f"  [warn] Could not resolve handle {handle}", file=sys.stderr)
     return None
 
 
