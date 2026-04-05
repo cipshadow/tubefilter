@@ -245,48 +245,29 @@ def render_email(channels_with_videos: list[dict]) -> str:
 
     video_sections = ""
     for ch in channels_with_videos:
-        video_cards = ""
+        video_links = ""
         for v in ch["videos"]:
-            video_cards += f"""
-            <tr>
-              <td style="padding: 12px 0; border-bottom: 1px solid #f0f0f0;">
-                <a href="{escape(v['url'], quote=True)}" style="text-decoration: none; color: inherit;">
-                  <table cellpadding="0" cellspacing="0" border="0" width="100%">
-                    <tr>
-                      <td width="168" style="vertical-align: top; padding-right: 16px;">
-                        <img src="{escape(v['thumbnail'], quote=True)}" width="168" height="94"
-                             alt="" style="display: block; border-radius: 6px; object-fit: cover;" />
-                      </td>
-                      <td style="vertical-align: top;">
-                        <p style="margin: 0 0 4px 0; font-size: 15px; font-weight: 600; color: #1a1a1a; line-height: 1.3;">
-                          {escape(v['title'])}
-                        </p>
-                        <p style="margin: 0; font-size: 13px; color: #666;">
-                          {escape(v['published'])}
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
+            video_links += f"""
+              <li style="margin: 0 0 6px 0;">
+                <a href="{escape(v['url'], quote=True)}" style="color: #1a1a1a; text-decoration: none; font-size: 15px; line-height: 1.4;">
+                  {escape(v['title'])}
                 </a>
-              </td>
-            </tr>"""
+                <span style="color: #999; font-size: 12px;"> &middot; {escape(v['published'])}</span>
+              </li>"""
 
         video_sections += f"""
         <tr>
-          <td style="padding: 24px 0 8px 0;">
-            <h2 style="margin: 0; font-size: 16px; font-weight: 700; color: #333; text-transform: uppercase; letter-spacing: 0.5px;">
+          <td style="padding: 20px 0 4px 0;">
+            <h2 style="margin: 0; font-size: 14px; font-weight: 700; color: #333; text-transform: uppercase; letter-spacing: 0.5px;">
               {escape(ch['name'])}
             </h2>
-            <p style="margin: 4px 0 0 0; font-size: 12px; color: #999;">
-              {len(ch['videos'])} new video{'s' if len(ch['videos']) != 1 else ''}
-            </p>
           </td>
         </tr>
         <tr>
           <td>
-            <table cellpadding="0" cellspacing="0" border="0" width="100%">
-              {video_cards}
-            </table>
+            <ul style="margin: 8px 0 0 0; padding-left: 18px; list-style: none;">
+              {video_links}
+            </ul>
           </td>
         </tr>"""
 
