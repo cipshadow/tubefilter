@@ -311,10 +311,8 @@ def render_email(channels_with_videos: list[dict]) -> str:
     for ch in channels_with_videos:
         video_links = ""
         for v in ch["videos"]:
-            lc = v.get("likes_color", "#999")
             video_links += f"""
               <li style="margin: 0 0 6px 0;">
-                <span style="color: {lc}; font-size: 10px;">&#9679;</span>
                 <a href="{escape(v['url'], quote=True)}" style="color: #1a1a1a; text-decoration: none; font-size: 15px; line-height: 1.4;">
                   {escape(v['title'])}
                 </a>
