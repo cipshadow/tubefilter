@@ -311,19 +311,14 @@ def render_email(channels_with_videos: list[dict]) -> str:
     for ch in channels_with_videos:
         video_links = ""
         for v in ch["videos"]:
-            vc = v.get("velocity_color", "#999")
             lc = v.get("likes_color", "#999")
-            vpd = v.get("views_per_day_fmt", "")
-            like_rate = v.get("like_rate", 0)
             video_links += f"""
-              <li style="margin: 0 0 8px 0;">
+              <li style="margin: 0 0 6px 0;">
+                <span style="color: {lc}; font-size: 10px;">&#9679;</span>
                 <a href="{escape(v['url'], quote=True)}" style="color: #1a1a1a; text-decoration: none; font-size: 15px; line-height: 1.4;">
                   {escape(v['title'])}
                 </a>
-                <br>
-                <span style="color: #999; font-size: 12px;">{escape(v.get('duration', ''))}</span>
-                <span style="font-size: 12px;"> &middot; <span style="color: {vc};">&#9679;</span> {vpd}/day</span>
-                <span style="font-size: 12px;"> &middot; <span style="color: {lc};">&#9679;</span> {like_rate:.1f}% likes</span>
+                <span style="color: #999; font-size: 12px;"> &middot; {escape(v.get('duration', ''))}</span>
               </li>"""
 
         video_sections += f"""
