@@ -108,8 +108,8 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
 
     api_key = os.environ.get("YOUTUBE_API_KEY")
 
-    # 1. Get durations from YouTube Data API
-    durations = {}
+    # 1. Get durations + stats from YouTube Data API
+    api_data = {}
     if api_key:
         for i in range(0, len(video_ids), 50):
             batch = video_ids[i : i + 50]
@@ -117,7 +117,7 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
                 resp = requests.get(
                     "https://www.googleapis.com/youtube/v3/videos",
                     params={
-                        "part": "contentDetails",
+                        "part": "contentDetails,statistics",
                         "id": ",".join(batch),
                         "key": api_key,
                     },
@@ -125,8 +125,20 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
                 )
                 resp.raise_for_status()
                 for item in resp.json().get("items", []):
-                    raw = item.get("contentDetails", {}).get("duration", "")
-                    durations[item["id"]] = _format_duration(raw)
+                    raw_dur = item.get("contentDetails", {}).get("duration", "")
+                    stats = item.get("statistics", {})
+                    views = int(stats.get("viewCount", 0))
+                    likes = int(stats.get("likeCount", 0))
+                    comments = int(stats.get("commentCount", 0))
+                    like_rate = (likes / views * 100) if views > 0 else 0
+                    api_data[item["id"]] = {
+                        "duration": _format_duration(raw_dur),
+                        "views": views,
+                        "views_fmt": _format_count(views),
+                        "likes_fmt": _format_count(likes),
+                        "like_rate": like_rate,
+                        "comments_fmt": _format_count(comments),
+                    }
             except requests.RequestException as e:
                 print(f"  [warn] YouTube API error: {e}", file=sys.stderr)
 
@@ -156,11 +168,24 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
     # 3. Combine
     details = {}
     for vid in video_ids:
+        data = api_data.get(vid, {})
         details[vid] = {
-            "duration": durations.get(vid, ""),
+            "duration": data.get("duration", ""),
+            "views": data.get("views", 0),
+            "views_fmt": data.get("views_fmt", ""),
+            "like_rate": data.get("like_rate", 0),
             "is_short": vid in short_ids,
         }
     return details
+
+
+def _format_count(n: int) -> str:
+    """Format a number compactly: 1200 -> 1.2K, 1500000 -> 1.5M."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M".replace(".0M", "M")
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K".replace(".0K", "K")
+    return str(n)
 
 
 def _format_duration(duration: str) -> str:
@@ -231,6 +256,9 @@ def fetch_feed(channel_id: str, exclude_shorts: bool = True) -> list[dict]:
         for v in videos:
             info = details.get(v["id"], {})
             v["duration"] = info.get("duration", "")
+            v["views"] = info.get("views", 0)
+            v["views_fmt"] = _format_count(info.get("views", 0))
+            v["like_rate"] = info.get("like_rate", 0)
         if exclude_shorts:
             videos = [v for v in videos if not details.get(v["id"], {}).get("is_short", False)]
 
@@ -267,13 +295,19 @@ def render_email(channels_with_videos: list[dict]) -> str:
     for ch in channels_with_videos:
         video_links = ""
         for v in ch["videos"]:
+            vc = v.get("views_color", "#999")
+            lc = v.get("likes_color", "#999")
+            views_fmt = v.get("views_fmt", "")
+            like_rate = v.get("like_rate", 0)
             video_links += f"""
-              <li style="margin: 0 0 6px 0;">
+              <li style="margin: 0 0 8px 0;">
                 <a href="{escape(v['url'], quote=True)}" style="color: #1a1a1a; text-decoration: none; font-size: 15px; line-height: 1.4;">
                   {escape(v['title'])}
                 </a>
-                <span style="color: #999; font-size: 12px;"> &middot; {escape(v.get('duration', ''))}</span>
-                <span style="color: #999; font-size: 12px;"> &middot; {escape(v['published'])}</span>
+                <br>
+                <span style="color: #999; font-size: 12px;">{escape(v.get('duration', ''))}</span>
+                <span style="font-size: 12px;"> &middot; <span style="color: {vc};">&#9679;</span> {views_fmt} views</span>
+                <span style="font-size: 12px;"> &middot; <span style="color: {lc};">&#9679;</span> {like_rate:.1f}% likes</span>
               </li>"""
 
         video_sections += f"""
@@ -443,6 +477,32 @@ def main():
 
     total = sum(len(ch["videos"]) for ch in channels_with_videos)
     print(f"  Found {total} new videos across {len(channels_with_videos)} channels.")
+
+    # Compute quartiles for views and like_rate across all videos
+    all_videos = [v for ch in channels_with_videos for v in ch["videos"]]
+    all_views = sorted(v.get("views", 0) for v in all_videos)
+    all_likes = sorted(v.get("like_rate", 0) for v in all_videos)
+
+    def quartile_bounds(values):
+        n = len(values)
+        if n < 4:
+            return values[0] if values else 0, values[-1] if values else 0
+        return values[n // 4], values[3 * n // 4]
+
+    views_q1, views_q3 = quartile_bounds(all_views)
+    likes_q1, likes_q3 = quartile_bounds(all_likes)
+
+    def signal_color(value, q1, q3):
+        if value >= q3:
+            return "#22c55e"  # green
+        if value <= q1:
+            return "#ef4444"  # red
+        return "#eab308"  # yellow
+
+    for ch in channels_with_videos:
+        for v in ch["videos"]:
+            v["views_color"] = signal_color(v.get("views", 0), views_q1, views_q3)
+            v["likes_color"] = signal_color(v.get("like_rate", 0), likes_q1, likes_q3)
 
     # Render and send
     html = render_email(channels_with_videos)
