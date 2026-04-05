@@ -103,35 +103,63 @@ def _resolve_handle(handle: str) -> str | None:
 # --- Feed Fetching ---
 
 def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
-    """Fetch duration for video IDs via YouTube Data API. Returns {id: {duration, is_short}}."""
+    """Fetch duration + shorts status for video IDs. Returns {id: {duration, is_short}}."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     api_key = os.environ.get("YOUTUBE_API_KEY")
-    if not api_key:
-        print("  [warn] YOUTUBE_API_KEY not set, skipping video details", file=sys.stderr)
-        return {}
 
-    details = {}
-    for i in range(0, len(video_ids), 50):
-        batch = video_ids[i : i + 50]
+    # 1. Get durations from YouTube Data API
+    durations = {}
+    if api_key:
+        for i in range(0, len(video_ids), 50):
+            batch = video_ids[i : i + 50]
+            try:
+                resp = requests.get(
+                    "https://www.googleapis.com/youtube/v3/videos",
+                    params={
+                        "part": "contentDetails",
+                        "id": ",".join(batch),
+                        "key": api_key,
+                    },
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                for item in resp.json().get("items", []):
+                    raw = item.get("contentDetails", {}).get("duration", "")
+                    durations[item["id"]] = _format_duration(raw)
+            except requests.RequestException as e:
+                print(f"  [warn] YouTube API error: {e}", file=sys.stderr)
+
+    # 2. Detect shorts via /shorts/ URL redirect (deterministic)
+    short_ids = set()
+
+    def check_short(vid):
         try:
-            resp = requests.get(
-                "https://www.googleapis.com/youtube/v3/videos",
-                params={
-                    "part": "contentDetails",
-                    "id": ",".join(batch),
-                    "key": api_key,
-                },
-                timeout=15,
+            r = requests.head(
+                f"https://www.youtube.com/shorts/{vid}",
+                allow_redirects=True, timeout=10,
+                headers={"User-Agent": "Mozilla/5.0"},
             )
-            resp.raise_for_status()
-            for item in resp.json().get("items", []):
-                raw = item.get("contentDetails", {}).get("duration", "")
-                details[item["id"]] = {
-                    "duration": _format_duration(raw),
-                    "is_short": _is_short_duration(raw),
-                }
-        except requests.RequestException as e:
-            print(f"  [warn] YouTube API error: {e}", file=sys.stderr)
+            if "/shorts/" in r.url:
+                return vid
+        except requests.RequestException:
+            pass
+        return None
 
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(check_short, vid): vid for vid in video_ids}
+        for f in as_completed(futures):
+            result = f.result()
+            if result:
+                short_ids.add(result)
+
+    # 3. Combine
+    details = {}
+    for vid in video_ids:
+        details[vid] = {
+            "duration": durations.get(vid, ""),
+            "is_short": vid in short_ids,
+        }
     return details
 
 
@@ -146,19 +174,6 @@ def _format_duration(duration: str) -> str:
     if hours:
         return f"{hours}:{minutes:02d}:{seconds:02d}"
     return f"{minutes}:{seconds:02d}"
-
-
-def _is_short_duration(duration: str) -> bool:
-    """Check if an ISO 8601 duration is <= 60 seconds (i.e., a Short)."""
-    # Format: PT1H2M3S, PT5M, PT30S, etc.
-    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
-    if not match:
-        return False
-    hours = int(match.group(1) or 0)
-    minutes = int(match.group(2) or 0)
-    seconds = int(match.group(3) or 0)
-    total = hours * 3600 + minutes * 60 + seconds
-    return total <= 180  # Shorts can be up to 3 minutes
 
 
 def fetch_feed(channel_id: str, exclude_shorts: bool = True) -> list[dict]:
