@@ -102,15 +102,14 @@ def _resolve_handle(handle: str) -> str | None:
 
 # --- Feed Fetching ---
 
-def _check_shorts_batch(video_ids: list[str]) -> set[str]:
-    """Check which video IDs are Shorts via YouTube Data API. Returns set of Short IDs."""
+def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
+    """Fetch duration for video IDs via YouTube Data API. Returns {id: {duration, is_short}}."""
     api_key = os.environ.get("YOUTUBE_API_KEY")
     if not api_key:
-        print("  [warn] YOUTUBE_API_KEY not set, skipping shorts filter", file=sys.stderr)
-        return set()
+        print("  [warn] YOUTUBE_API_KEY not set, skipping video details", file=sys.stderr)
+        return {}
 
-    shorts = set()
-    # API supports up to 50 IDs per request
+    details = {}
     for i in range(0, len(video_ids), 50):
         batch = video_ids[i : i + 50]
         try:
@@ -125,14 +124,28 @@ def _check_shorts_batch(video_ids: list[str]) -> set[str]:
             )
             resp.raise_for_status()
             for item in resp.json().get("items", []):
-                # Parse ISO 8601 duration (PT#M#S). Shorts are <= 60s.
-                duration = item.get("contentDetails", {}).get("duration", "")
-                if _is_short_duration(duration):
-                    shorts.add(item["id"])
+                raw = item.get("contentDetails", {}).get("duration", "")
+                details[item["id"]] = {
+                    "duration": _format_duration(raw),
+                    "is_short": _is_short_duration(raw),
+                }
         except requests.RequestException as e:
             print(f"  [warn] YouTube API error: {e}", file=sys.stderr)
 
-    return shorts
+    return details
+
+
+def _format_duration(duration: str) -> str:
+    """Convert ISO 8601 duration (PT1H2M3S) to human-readable (1:02:03)."""
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
+    if not match:
+        return ""
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
 
 
 def _is_short_duration(duration: str) -> bool:
@@ -194,11 +207,14 @@ def fetch_feed(channel_id: str, exclude_shorts: bool = True) -> list[dict]:
             }
         )
 
-    if exclude_shorts and videos:
+    if videos:
         all_ids = [v["id"] for v in videos if v["id"]]
-        short_ids = _check_shorts_batch(all_ids)
-        if short_ids:
-            videos = [v for v in videos if v["id"] not in short_ids]
+        details = _fetch_video_details(all_ids)
+        for v in videos:
+            info = details.get(v["id"], {})
+            v["duration"] = info.get("duration", "")
+        if exclude_shorts:
+            videos = [v for v in videos if not details.get(v["id"], {}).get("is_short", False)]
 
     return videos
 
@@ -238,6 +254,7 @@ def render_email(channels_with_videos: list[dict]) -> str:
                 <a href="{escape(v['url'], quote=True)}" style="color: #1a1a1a; text-decoration: none; font-size: 15px; line-height: 1.4;">
                   {escape(v['title'])}
                 </a>
+                <span style="color: #999; font-size: 12px;"> &middot; {escape(v.get('duration', ''))}</span>
                 <span style="color: #999; font-size: 12px;"> &middot; {escape(v['published'])}</span>
               </li>"""
 
