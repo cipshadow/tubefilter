@@ -164,16 +164,19 @@ def _fetch_video_details(video_ids: list[str]) -> dict[str, dict]:
 
 
 def _format_duration(duration: str) -> str:
-    """Convert ISO 8601 duration (PT1H2M3S) to human-readable (1:02:03)."""
+    """Convert ISO 8601 duration (PT1H2M3S) to human-readable (16min, 1h 2min)."""
     match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
     if not match:
         return ""
     hours = int(match.group(1) or 0)
     minutes = int(match.group(2) or 0)
     seconds = int(match.group(3) or 0)
+    # Round up if 30+ seconds
+    if seconds >= 30:
+        minutes += 1
     if hours:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
+        return f"{hours}h {minutes}min" if minutes else f"{hours}h"
+    return f"{minutes}min" if minutes else "<1min"
 
 
 def fetch_feed(channel_id: str, exclude_shorts: bool = True) -> list[dict]:
