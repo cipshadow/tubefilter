@@ -73,3 +73,6 @@ channels:
 
   - name: "Channel 5"
     channel: "@Channel5YouTube"
+
+  - name: "Johnny Harris"
+    channel: "@johnnyharris"
